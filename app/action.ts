@@ -2,7 +2,6 @@
 
 const BASE_API = "https://api.sansekai.my.id/api";
 
-// --- HELPERS ---
 async function fetchData(url: string) {
   try {
     const res = await fetch(url, {
@@ -10,7 +9,7 @@ async function fetchData(url: string) {
         'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
         'Referer': 'https://api.sansekai.my.id/',
       },
-      next: { revalidate: 300 } // Cache 5 menit biar ngebut
+      next: { revalidate: 300 }
     });
     if (!res.ok) return null;
     return await res.json();
@@ -19,7 +18,6 @@ async function fetchData(url: string) {
   }
 }
 
-// --- FUNGSI 1: AMBIL PLAYLIST (Sama seperti bagian bawah PHP) ---
 export async function getPlaylist(provider: string, id: string) {
   let playlist = [];
   let title = "Drama Series";
@@ -30,7 +28,6 @@ export async function getPlaylist(provider: string, id: string) {
     if (list.length > 0) {
       title = "Dramabox Series";
       list.forEach((ep: any, index: number) => {
-        // Ambil URL direct kualitas terbaik
         let videoUrl = '';
         if (ep.cdnList) {
             ep.cdnList.forEach((cdn: any) => {
@@ -45,7 +42,7 @@ export async function getPlaylist(provider: string, id: string) {
           title: ep.chapterName || `Ep ${index + 1}`,
           episode: (ep.chapterIndex || 0) + 1,
           season: 1,
-          directUrl: videoUrl // Dramabox biasanya langsung ada URL-nya
+          directUrl: videoUrl
         });
       });
     }
@@ -59,7 +56,7 @@ export async function getPlaylist(provider: string, id: string) {
         title: `Ep ${ep.episodeNo}`,
         episode: ep.episodeNo,
         season: 1,
-        directUrl: ep.playVoucher || '' // Butuh diproses lagi nanti
+        directUrl: ep.playVoucher || ''
       });
     });
   }
@@ -114,16 +111,12 @@ export async function getPlaylist(provider: string, id: string) {
   return { title, playlist };
 }
 
-// --- FUNGSI 2: AMBIL STREAM URL (Sama seperti AJAX PHP) ---
 export async function getStreamUrl(provider: string, id: string, season: number, episode: number, initialUrl: string) {
-    // Jika provider sudah punya direct URL (misal Flickreels/Dramabox), langsung return
     if (initialUrl && initialUrl.startsWith('http')) return initialUrl;
 
     try {
         if (provider === 'moviebox') {
             const data = await fetchData(`${BASE_API}/moviebox/sources?subjectId=${id}`);
-            
-            // Logika prioritas download/stream
             if (data?.downloads) {
                 for (const src of data.downloads) {
                     let url = src.url;
