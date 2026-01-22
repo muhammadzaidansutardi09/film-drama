@@ -1,25 +1,37 @@
 import Link from 'next/link';
 
+// --- TIPE DATA (TypeScript Interface) ---
+interface Movie {
+  id: string;
+  title: string;
+  cover: string;
+  label: string;
+}
+
+interface ProviderData {
+  [key: string]: any; // Mengizinkan struktur data yang fleksibel dari API
+}
+
 // --- KONFIGURASI ---
 const BASE_API = "https://api.sansekai.my.id/api";
 
-// --- LOGIKA NORMALISASI DATA (Terjemahan dari PHP function normalizeData) ---
-function normalizeData(provider, dataSources, isSearch = false) {
-  let finalList = [];
-  const seenIds = new Set();
+// --- LOGIKA NORMALISASI DATA ---
+function normalizeData(provider: string, dataSources: any[], isSearch: boolean = false): Movie[] {
+  let finalList: Movie[] = [];
+  const seenIds = new Set<string>();
 
   dataSources.forEach((source) => {
     // Cek apakah data valid
     const data = source || {}; 
-    let items = [];
+    let items: Movie[] = [];
 
     if (provider === 'dramabox') {
       const rawItems = Array.isArray(data) ? data : (data.data || []);
-      rawItems.forEach(item => {
+      rawItems.forEach((item: any) => {
         const id = item.bookId;
         if (id) {
           items.push({
-            id: id,
+            id: String(id),
             title: item.bookName || '',
             cover: item.cover || item.coverWap || '',
             label: 'Dramabox'
@@ -29,10 +41,10 @@ function normalizeData(provider, dataSources, isSearch = false) {
     } 
     else if (provider === 'netshort') {
       const rawItems = isSearch ? (data.searchCodeSearchResult || []) : (data.contentInfos || []);
-      rawItems.forEach(item => {
+      rawItems.forEach((item: any) => {
         if (item.shortPlayId) {
           items.push({
-            id: item.shortPlayId,
+            id: String(item.shortPlayId),
             title: item.shortPlayName || '',
             cover: item.shortPlayCover || '',
             label: 'Netshort'
@@ -42,10 +54,10 @@ function normalizeData(provider, dataSources, isSearch = false) {
     }
     else if (provider === 'moviebox') {
       const rawItems = isSearch ? (data.items || []) : (data.subjectList || []);
-      rawItems.forEach(item => {
+      rawItems.forEach((item: any) => {
         if (item.subjectId) {
           items.push({
-            id: item.subjectId,
+            id: String(item.subjectId),
             title: item.title || '',
             cover: item.cover?.url || '',
             label: item.imdbRatingValue ? `IMDB ${item.imdbRatingValue}` : 'Movie'
@@ -55,10 +67,10 @@ function normalizeData(provider, dataSources, isSearch = false) {
     }
     else if (provider === 'flickreels') {
       const rawItems = isSearch ? (data.data || []) : (data.data?.list || []);
-      rawItems.forEach(item => {
+      rawItems.forEach((item: any) => {
         if (item.playlet_id) {
           items.push({
-            id: item.playlet_id,
+            id: String(item.playlet_id),
             title: item.title || '',
             cover: item.cover || '',
             label: 'Flickreels'
@@ -69,12 +81,12 @@ function normalizeData(provider, dataSources, isSearch = false) {
     else if (provider === 'melolo') {
       if (isSearch) {
         const groups = data.data?.search_data || [];
-        groups.forEach(group => {
-          (group.books || []).forEach(item => {
+        groups.forEach((group: any) => {
+          (group.books || []).forEach((item: any) => {
             let cover = item.thumb_url || '';
             if (cover.includes('.heic')) cover = cover.replace('.heic', '.jpg');
             items.push({
-              id: item.book_id,
+              id: String(item.book_id),
               title: item.book_name,
               cover: cover,
               label: 'Melolo'
@@ -82,11 +94,11 @@ function normalizeData(provider, dataSources, isSearch = false) {
           });
         });
       } else {
-        (data.books || []).forEach(item => {
+        (data.books || []).forEach((item: any) => {
           let cover = item.thumb_url || '';
           if (cover.includes('.heic')) cover = cover.replace('.heic', '.jpg');
           items.push({
-            id: item.book_id,
+            id: String(item.book_id),
             title: item.book_name,
             cover: cover,
             label: 'Melolo'
@@ -104,7 +116,7 @@ function normalizeData(provider, dataSources, isSearch = false) {
     });
   });
 
-  // Acak jika bukan search (biar fresh seperti PHP shuffle)
+  // Acak jika bukan search
   if (!isSearch) {
     finalList = finalList.sort(() => Math.random() - 0.5);
   }
@@ -112,17 +124,22 @@ function normalizeData(provider, dataSources, isSearch = false) {
   return finalList;
 }
 
-// --- KOMPONEN UTAMA (Server Component) ---
-export default async function Home({ searchParams }) {
-  // Ambil parameter dari URL (?provider=...&q=...)
-  const params = await searchParams; // Next.js 15 butuh await, versi lama tidak masalah
-  const currentProvider = params?.provider || 'dramabox';
-  const query = params?.q || '';
+// --- KOMPONEN UTAMA ---
+// Definisikan tipe Props untuk halaman
+type Props = {
+  searchParams: Promise<{ [key: string]: string | undefined }>
+}
+
+export default async function Home(props: Props) {
+  // Ambil parameter dari URL
+  const searchParams = await props.searchParams;
+  const currentProvider = searchParams?.provider || 'dramabox';
+  const query = searchParams?.q || '';
   
   // Setup URL Endpoint (Mapping)
-  let urlsToFetch = [];
+  let urlsToFetch: string[] = [];
 
-  const homeSources = {
+  const homeSources: Record<string, string[]> = {
     'dramabox': ['/dramabox/trending', '/dramabox/latest', '/dramabox/foryou'],
     'netshort': ['/netshort/foryou', '/netshort/theaters'],
     'moviebox': ['/moviebox/trending', '/moviebox/homepage'],
@@ -130,7 +147,7 @@ export default async function Home({ searchParams }) {
     'melolo': ['/melolo/trending', '/melolo/latest']
   };
 
-  const searchSources = {
+  const searchSources: Record<string, string> = {
     'dramabox': `/dramabox/search?query=${query}`,
     'netshort': `/netshort/search?query=${query}`,
     'moviebox': `/moviebox/search?query=${query}&page=1`,
@@ -140,18 +157,19 @@ export default async function Home({ searchParams }) {
 
   if (query) {
     // Mode Search
-    urlsToFetch.push(`${BASE_API}${searchSources[currentProvider]}`);
+    if (searchSources[currentProvider]) {
+      urlsToFetch.push(`${BASE_API}${searchSources[currentProvider]}`);
+    }
   } else {
-    // Mode Home (Multi URL fetch parallel)
+    // Mode Home
     const paths = homeSources[currentProvider] || [];
     paths.forEach(path => urlsToFetch.push(`${BASE_API}${path}`));
   }
 
-  // Fetch Data (Pengganti curl_multi PHP)
-  // Kita pakai Promise.all agar fetch jalan berbarengan (Parallel)
+  // Fetch Data Parallel
   const responses = await Promise.all(
     urlsToFetch.map(url => 
-      fetch(url, { next: { revalidate: 60 } }) // Cache 60 detik biar cepat
+      fetch(url, { next: { revalidate: 60 } })
         .then(res => res.json())
         .catch(() => null)
     )
@@ -228,7 +246,7 @@ export default async function Home({ searchParams }) {
             {movies.map((movie, index) => (
               <Link 
                 key={`${movie.id}-${index}`} 
-                href={`/player/${movie.id}?provider=${currentProvider}`} // Ganti link ini nanti kalau sudah buat halaman player
+                href={`/player/${movie.id}?provider=${currentProvider}`} 
                 className="group relative aspect-[3/4.5] rounded-xl overflow-hidden bg-[#1e1e1e] shadow-lg border border-white/5 block active:scale-95 transition-transform duration-200"
               >
                 <img 
