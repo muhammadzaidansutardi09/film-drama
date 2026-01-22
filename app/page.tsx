@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-// --- TIPE DATA (TypeScript Interface) ---
+// --- TIPE DATA ---
 interface Movie {
   id: string;
   title: string;
@@ -8,30 +8,24 @@ interface Movie {
   label: string;
 }
 
-interface ProviderData {
-  [key: string]: any; // Mengizinkan struktur data yang fleksibel dari API
-}
-
 // --- KONFIGURASI ---
 const BASE_API = "https://api.sansekai.my.id/api";
 
-// --- LOGIKA NORMALISASI DATA ---
+// --- LOGIKA DATA (SAMA SEPERTI SEBELUMNYA) ---
 function normalizeData(provider: string, dataSources: any[], isSearch: boolean = false): Movie[] {
   let finalList: Movie[] = [];
   const seenIds = new Set<string>();
 
   dataSources.forEach((source) => {
-    // Cek apakah data valid
     const data = source || {}; 
     let items: Movie[] = [];
 
     if (provider === 'dramabox') {
       const rawItems = Array.isArray(data) ? data : (data.data || []);
       rawItems.forEach((item: any) => {
-        const id = item.bookId;
-        if (id) {
+        if (item.bookId) {
           items.push({
-            id: String(id),
+            id: String(item.bookId),
             title: item.bookName || '',
             cover: item.cover || item.coverWap || '',
             label: 'Dramabox'
@@ -79,22 +73,8 @@ function normalizeData(provider: string, dataSources: any[], isSearch: boolean =
       });
     }
     else if (provider === 'melolo') {
-      if (isSearch) {
-        const groups = data.data?.search_data || [];
-        groups.forEach((group: any) => {
-          (group.books || []).forEach((item: any) => {
-            let cover = item.thumb_url || '';
-            if (cover.includes('.heic')) cover = cover.replace('.heic', '.jpg');
-            items.push({
-              id: String(item.book_id),
-              title: item.book_name,
-              cover: cover,
-              label: 'Melolo'
-            });
-          });
-        });
-      } else {
-        (data.books || []).forEach((item: any) => {
+      const processItems = (list: any[]) => {
+        list.forEach((item: any) => {
           let cover = item.thumb_url || '';
           if (cover.includes('.heic')) cover = cover.replace('.heic', '.jpg');
           items.push({
@@ -104,10 +84,15 @@ function normalizeData(provider: string, dataSources: any[], isSearch: boolean =
             label: 'Melolo'
           });
         });
+      };
+
+      if (isSearch) {
+        (data.data?.search_data || []).forEach((group: any) => processItems(group.books || []));
+      } else {
+        processItems(data.books || []);
       }
     }
 
-    // Filter Duplikat
     items.forEach(video => {
       if (!seenIds.has(video.id) && video.id) {
         seenIds.add(video.id);
@@ -116,7 +101,6 @@ function normalizeData(provider: string, dataSources: any[], isSearch: boolean =
     });
   });
 
-  // Acak jika bukan search
   if (!isSearch) {
     finalList = finalList.sort(() => Math.random() - 0.5);
   }
@@ -124,21 +108,18 @@ function normalizeData(provider: string, dataSources: any[], isSearch: boolean =
   return finalList;
 }
 
-// --- KOMPONEN UTAMA ---
-// Definisikan tipe Props untuk halaman
+// --- KOMPONEN UTAMA (MODERN UI) ---
 type Props = {
   searchParams: Promise<{ [key: string]: string | undefined }>
 }
 
 export default async function Home(props: Props) {
-  // Ambil parameter dari URL
   const searchParams = await props.searchParams;
   const currentProvider = searchParams?.provider || 'dramabox';
   const query = searchParams?.q || '';
   
-  // Setup URL Endpoint (Mapping)
+  // Logic Fetching
   let urlsToFetch: string[] = [];
-
   const homeSources: Record<string, string[]> = {
     'dramabox': ['/dramabox/trending', '/dramabox/latest', '/dramabox/foryou'],
     'netshort': ['/netshort/foryou', '/netshort/theaters'],
@@ -146,7 +127,6 @@ export default async function Home(props: Props) {
     'flickreels': ['/flickreels/foryou', '/flickreels/latest'],
     'melolo': ['/melolo/trending', '/melolo/latest']
   };
-
   const searchSources: Record<string, string> = {
     'dramabox': `/dramabox/search?query=${query}`,
     'netshort': `/netshort/search?query=${query}`,
@@ -156,116 +136,132 @@ export default async function Home(props: Props) {
   };
 
   if (query) {
-    // Mode Search
-    if (searchSources[currentProvider]) {
-      urlsToFetch.push(`${BASE_API}${searchSources[currentProvider]}`);
-    }
+    if (searchSources[currentProvider]) urlsToFetch.push(`${BASE_API}${searchSources[currentProvider]}`);
   } else {
-    // Mode Home
-    const paths = homeSources[currentProvider] || [];
-    paths.forEach(path => urlsToFetch.push(`${BASE_API}${path}`));
+    (homeSources[currentProvider] || []).forEach(path => urlsToFetch.push(`${BASE_API}${path}`));
   }
 
-  // Fetch Data Parallel
   const responses = await Promise.all(
-    urlsToFetch.map(url => 
-      fetch(url, { next: { revalidate: 60 } })
-        .then(res => res.json())
-        .catch(() => null)
-    )
+    urlsToFetch.map(url => fetch(url, { next: { revalidate: 60 } }).then(res => res.json()).catch(() => null))
   );
 
-  // Olah datanya
   const movies = normalizeData(currentProvider, responses, !!query);
 
   return (
-    <div className="min-h-screen bg-[#0f0f0f] text-white font-sans pb-24">
-      {/* HEADER */}
-      <header className="fixed top-0 left-0 w-full z-50 bg-[#0f0f0f]/95 backdrop-blur-md border-b border-white/5 shadow-lg">
-        <div className="px-4 py-3 flex items-center justify-between gap-3">
-          <Link href="/" className="flex items-center gap-2 flex-shrink-0">
-            <div className="w-8 h-8 bg-gradient-to-br from-[#ff0050] to-red-700 rounded-lg flex items-center justify-center text-white font-bold text-lg">S</div>
+    <div className="min-h-screen bg-[#050505] text-gray-100 font-sans selection:bg-[#ff0050] selection:text-white">
+      
+      {/* HEADER GLASSMORPHISM */}
+      <header className="fixed top-0 left-0 w-full z-50 bg-black/60 backdrop-blur-xl border-b border-white/5 transition-all duration-300">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+          {/* Logo */}
+          <Link href="/" className="flex items-center gap-2 group">
+            <div className="w-9 h-9 bg-gradient-to-tr from-[#ff0050] to-[#b30038] rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-[0_0_15px_rgba(255,0,80,0.5)] transition-transform group-hover:scale-110">
+              S
+            </div>
+            <span className="hidden sm:block font-bold text-lg tracking-tight text-white">StreamHub</span>
           </Link>
 
-          <form className="flex-1 relative">
+          {/* Search Bar Modern */}
+          <form className="flex-1 max-w-md relative group">
             <input type="hidden" name="provider" value={currentProvider} />
+            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-gray-500 group-focus-within:text-[#ff0050] transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
             <input 
               type="text" 
               name="q" 
               defaultValue={query}
-              placeholder={`Cari di ${currentProvider}...`}
-              className="w-full bg-[#1e1e1e] border border-white/10 rounded-full py-2 pl-4 pr-10 text-sm focus:outline-none focus:border-[#ff0050] text-gray-200 placeholder-gray-500 transition-all"
+              placeholder={`Cari film di ${currentProvider}...`}
+              className="w-full bg-[#1a1a1a] border border-white/5 rounded-2xl py-2.5 pl-10 pr-4 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#ff0050]/50 focus:bg-[#222] transition-all"
             />
-            <button type="submit" className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400">
-              🔍
-            </button>
           </form>
         </div>
       </header>
 
-      {/* NAVIGASI PROVIDER */}
-      <nav className="fixed top-[64px] w-full z-40 bg-[#0f0f0f]/95 backdrop-blur px-2 py-3 border-b border-white/5">
-        <div className="flex space-x-3 overflow-x-auto no-scrollbar px-2" style={{ scrollbarWidth: 'none' }}>
-          {['dramabox', 'netshort', 'flickreels', 'moviebox', 'melolo'].map((p) => {
-            const isActive = currentProvider === p;
-            return (
-              <Link 
-                key={p}
-                href={`/?provider=${p}${query ? `&q=${query}` : ''}`}
-                className={`px-5 py-2 rounded-full text-xs uppercase tracking-wider transition transform duration-200 whitespace-nowrap ${
-                  isActive 
-                  ? 'bg-white text-black font-bold ring-2 ring-white scale-105 shadow-lg' 
-                  : 'bg-white/5 text-gray-400 hover:bg-white/10'
-                }`}
-              >
-                {p}
-              </Link>
-            )
-          })}
+      {/* NAVIGASI PILLS (Sticky) */}
+      <nav className="fixed top-[65px] w-full z-40 bg-[#050505]/80 backdrop-blur-lg border-b border-white/5 py-3">
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="flex space-x-2 overflow-x-auto no-scrollbar pb-1" style={{ scrollbarWidth: 'none' }}>
+            {['dramabox', 'netshort', 'flickreels', 'moviebox', 'melolo'].map((p) => {
+              const isActive = currentProvider === p;
+              return (
+                <Link 
+                  key={p}
+                  href={`/?provider=${p}${query ? `&q=${query}` : ''}`}
+                  className={`px-6 py-2 rounded-full text-xs font-semibold uppercase tracking-wide transition-all duration-300 whitespace-nowrap border ${
+                    isActive 
+                    ? 'bg-white text-black border-white shadow-[0_0_15px_rgba(255,255,255,0.2)] transform scale-105' 
+                    : 'bg-[#151515] text-gray-400 border-white/5 hover:bg-[#222] hover:text-white hover:border-white/20'
+                  }`}
+                >
+                  {p}
+                </Link>
+              )
+            })}
+          </div>
         </div>
       </nav>
 
       {/* KONTEN UTAMA */}
-      <main className="mt-[128px] px-3 container mx-auto max-w-3xl min-h-screen">
+      <main className="pt-[140px] pb-24 px-4 max-w-7xl mx-auto min-h-screen">
+        
+        {/* Status Pencarian */}
         {query && (
-          <div className="mb-4 text-sm text-gray-400">
-            Hasil pencarian untuk: <span className="text-white font-bold">"{query}"</span>
-            <span className="text-xs bg-[#ff0050] px-2 py-0.5 rounded ml-2 text-white">{movies.length} Ditemukan</span>
+          <div className="mb-6 flex items-center gap-2 text-sm text-gray-400 animate-fade-in">
+            <span>Hasil untuk: <span className="text-white font-bold text-lg">"{query}"</span></span>
+            <span className="bg-[#ff0050] text-white text-[10px] font-bold px-2 py-0.5 rounded-md shadow-sm">{movies.length}</span>
           </div>
         )}
 
+        {/* Empty State */}
         {movies.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-[50vh] text-gray-500 text-center px-6">
-            <p>Tidak ada hasil ditemukan.</p>
-            <Link href={`/?provider=${currentProvider}`} className="mt-6 text-[#ff0050] text-sm border border-[#ff0050]/50 px-6 py-2 rounded-full">
-              Reset Home
+          <div className="flex flex-col items-center justify-center h-[50vh] text-center">
+            <div className="w-16 h-16 bg-[#1a1a1a] rounded-full flex items-center justify-center mb-4 text-gray-600">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
+              </svg>
+            </div>
+            <p className="text-gray-400 text-lg">Belum ada konten di sini.</p>
+            <Link href={`/?provider=${currentProvider}`} className="mt-4 text-[#ff0050] hover:text-white transition-colors text-sm font-medium">
+              Refresh Halaman
             </Link>
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
+          /* Grid Layout Premium */
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 sm:gap-4 md:gap-5">
             {movies.map((movie, index) => (
               <Link 
                 key={`${movie.id}-${index}`} 
                 href={`/player/${movie.id}?provider=${currentProvider}`} 
-                className="group relative aspect-[3/4.5] rounded-xl overflow-hidden bg-[#1e1e1e] shadow-lg border border-white/5 block active:scale-95 transition-transform duration-200"
+                className="group relative aspect-[2/3] rounded-xl overflow-hidden bg-[#151515] cursor-pointer"
               >
-                <img 
-                  src={movie.cover} 
-                  alt={movie.title}
-                  className="w-full h-full object-cover transition duration-500 group-hover:scale-110 group-hover:opacity-80"
-                  style={{ backgroundColor: '#222' }}
-                />
-                
-                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent"></div>
-                
+                {/* Image Wrapper with Loading Placeholder */}
+                <div className="w-full h-full relative">
+                  <img 
+                    src={movie.cover} 
+                    alt={movie.title}
+                    loading="lazy"
+                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                    onError={(e) => {
+                       (e.target as HTMLImageElement).src = 'https://placehold.co/400x600/1a1a1a/666?text=No+Image';
+                    }}
+                  />
+                  {/* Gradient Overlay for Text Readability */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent opacity-90"></div>
+                </div>
+
+                {/* Badge Label */}
                 {movie.label && (
-                  <div className="absolute top-2 right-2 bg-[#ff0050]/90 backdrop-blur-sm px-1.5 py-0.5 rounded text-[9px] font-bold text-white shadow-sm">
+                  <div className="absolute top-2 right-2 bg-[#ff0050] text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-lg z-10">
                     {movie.label}
                   </div>
                 )}
 
-                <div className="absolute bottom-0 left-0 w-full p-2.5">
-                  <h3 className="text-[11px] sm:text-xs font-medium text-white line-clamp-2 leading-snug drop-shadow-md">
+                {/* Movie Info */}
+                <div className="absolute bottom-0 left-0 w-full p-3 transform translate-y-1 group-hover:translate-y-0 transition-transform duration-300">
+                  <h3 className="text-xs sm:text-sm font-semibold text-white line-clamp-2 leading-tight drop-shadow-md group-hover:text-[#ff0050] transition-colors">
                     {movie.title}
                   </h3>
                 </div>
